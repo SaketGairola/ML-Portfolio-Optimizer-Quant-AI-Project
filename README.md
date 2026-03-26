@@ -2,7 +2,5 @@ streamlit
 yfinance
 pandas
 numpy
+scipy
 plotly
-xgboost
-ta
-scikit-learn
