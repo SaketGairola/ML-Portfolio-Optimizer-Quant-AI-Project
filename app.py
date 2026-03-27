@@ -1,7 +1,8 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
+import requests
+import datetime
 import scipy.optimize as sco
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -14,7 +15,7 @@ st.caption("Current Holdings vs. Markowitz Optimal | #QuantFinance")
 # --- 2. SIDEBAR (HOLDINGS + DIVERSIFICATION) ---
 with st.sidebar:
     st.header("⚙️ 1. Define Assets")
-    raw_tickers = st.text_input("Portfolio Tickers", "RELIANCE.NS, IRCON.NS, JWL.NS, ABFRL.NS")
+    raw_tickers = st.text_input("Portfolio Tickers", "RELIANCE, IRCON, JWL, ABFRL")
     tickers = [t.strip().upper() for t in raw_tickers.split(',') if t.strip()]
     
     if len(tickers) < 2:
@@ -60,9 +61,43 @@ if max_weight * len(tickers) < 1.0:
 
 # --- 3. DATA ENGINE ---
 @st.cache_data(ttl=3600)
-def fetch_data(t_list, p):
-    df = yf.download(t_list + ['^NSEI'], period=p, progress=False)
-    prices = df['Adj Close'] if 'Adj Close' in df.columns else df['Close']
+def fetch_data(tickers, period):
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+
+    session = requests.Session()
+    session.get("https://www.nseindia.com", headers=headers)
+
+    all_data = {}
+
+    for symbol in tickers:
+        try:
+            url = f"https://www.nseindia.com/api/historical/cm/equity?symbol={symbol}&series=[%22EQ%22]"
+            response = session.get(url, headers=headers)
+            data = response.json()
+
+            df = pd.DataFrame(data["data"])
+
+            df['Close'] = df['CH_CLOSING_PRICE']
+            df.index = pd.to_datetime(df['CH_TIMESTAMP'])
+
+            all_data[symbol] = df['Close']
+
+        except:
+            st.warning(f"⚠️ Failed for {symbol}, using simulated data")
+
+            n = 200
+            idx = pd.date_range(end=pd.Timestamp.now(), periods=n, freq="D")
+
+            price = 2500 + np.cumsum(np.random.normal(0, 5, n))
+
+            all_data[symbol] = pd.Series(price, index=idx)
+
+    prices = pd.DataFrame(all_data)
+
     return prices.dropna()
 
 try:
